@@ -50,6 +50,8 @@
 //! // aggregate `Handles`.
 //! ```
 
+use async_trait::async_trait;
+
 use crate::aggregate::Aggregate;
 
 /// A single, strongly-typed command addressed at one aggregate.
@@ -82,4 +84,29 @@ pub trait Handles<C: CommandKind>: Aggregate {
     /// Like [`Aggregate::handle`], this takes `&self`: deciding never mutates
     /// state. Returning `Ok(vec![])` is a valid no-op.
     fn handle(&self, command: C) -> Result<Vec<Self::Event>, Self::Rejection>;
+}
+
+/// An [`Aggregate`] that handles a [`CommandKind`] *with access to an injected
+/// environment* `Env`.
+///
+/// [`Handles<C>`] is a pure decider. When a command needs to consult
+/// dependencies to decide — a pricing client, a clock, another service, a policy
+/// object — implement `HandlesIn<C, Env>` instead. The service hands your async
+/// handler a shared reference to its environment (set via
+/// [`Service::with_env`](crate::Service::with_env)) and dispatches the command
+/// through [`Service::dispatch`](crate::Service::dispatch).
+///
+/// Deciding stays write-light: you still return events or a rejection. The
+/// environment is for *reads* (look something up to decide), keeping the
+/// append-only, optimistic-concurrency guarantees intact.
+///
+/// Use [`Handles<C>`] for pure commands (dispatched with
+/// [`Service::submit`](crate::Service::submit)) and `HandlesIn<C, Env>` for
+/// dependency-driven ones (dispatched with
+/// [`Service::dispatch`](crate::Service::dispatch)). The two can coexist on the
+/// same aggregate for different commands.
+#[async_trait]
+pub trait HandlesIn<C: CommandKind, Env: Send + Sync>: Aggregate {
+    /// Decide which events `command` produces, consulting `env` as needed.
+    async fn handle(&self, command: C, env: &Env) -> Result<Vec<Self::Event>, Self::Rejection>;
 }

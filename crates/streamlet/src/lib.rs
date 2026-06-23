@@ -77,8 +77,13 @@ pub use aggregate::{render, render_from, Aggregate, View};
 pub use command::{Command, NoCommand};
 pub use error::{ServiceError, StoreError};
 pub use event::{DomainEvent, ExpectedRevision, Metadata, Recorded};
-pub use handler::{CommandKind, Handles};
+pub use handler::{CommandKind, Handles, HandlesIn};
 pub use ids::StreamId;
+
+/// Re-export of [`async_trait::async_trait`], so implementors of
+/// [`HandlesIn`] can write `#[streamlet::async_trait]` without adding the
+/// `async-trait` crate to their own dependencies.
+pub use async_trait::async_trait;
 pub use service::{Entity, Executor, Service};
 pub use store::{catch_up_view, replay_view, DocumentStore, EventStore, Projection};
 
@@ -99,10 +104,11 @@ pub mod prelude {
     pub use crate::declare_service;
     pub use crate::error::{ServiceError, StoreError};
     pub use crate::event::{DomainEvent, ExpectedRevision, Metadata, Recorded};
-    pub use crate::handler::{CommandKind, Handles};
+    pub use crate::handler::{CommandKind, Handles, HandlesIn};
     pub use crate::ids::StreamId;
     pub use crate::service::{Entity, Executor, Service};
     pub use crate::store::{catch_up_view, replay_view, DocumentStore, EventStore, Projection};
+    pub use async_trait::async_trait;
     pub use streamlet_derive::{Command, CommandKind, DomainEvent};
 
     #[cfg(feature = "memory")]

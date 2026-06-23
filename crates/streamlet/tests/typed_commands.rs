@@ -185,3 +185,73 @@ async fn execute_with_retry_runs_the_command() {
     let (state, _) = service.load("x").await.unwrap();
     assert_eq!(state.sum, 5);
 }
+
+// --- Dependency-injected (environment-aware) handlers -----------------------
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, DomainEvent)]
+#[domain_event(prefix = "vault.", rename_all = "snake_case")]
+enum VaultEvent {
+    Withdrawn { amount: u64 },
+}
+
+#[derive(Debug, Clone, CommandKind)]
+struct WithdrawCash(u64);
+
+#[derive(Debug, PartialEq, thiserror::Error)]
+enum VaultError {
+    #[error("exceeds daily limit of {limit}")]
+    ExceedsLimit { limit: u64 },
+}
+
+#[derive(Debug, Default)]
+struct Vault;
+
+/// The injected environment: a policy the handler must consult to decide.
+struct Policy {
+    daily_limit: u64,
+}
+
+impl Aggregate for Vault {
+    type Command = NoCommand;
+    type Event = VaultEvent;
+    type Rejection = VaultError;
+    const TYPE: &'static str = "vault";
+
+    fn handle(&self, command: NoCommand) -> Result<Vec<VaultEvent>, VaultError> {
+        match command {}
+    }
+
+    fn apply(&mut self, _event: &VaultEvent) {}
+}
+
+#[streamlet::async_trait]
+impl HandlesIn<WithdrawCash, Policy> for Vault {
+    async fn handle(
+        &self,
+        WithdrawCash(amount): WithdrawCash,
+        policy: &Policy,
+    ) -> Result<Vec<VaultEvent>, VaultError> {
+        if amount > policy.daily_limit {
+            return Err(VaultError::ExceedsLimit {
+                limit: policy.daily_limit,
+            });
+        }
+        Ok(vec![VaultEvent::Withdrawn { amount }])
+    }
+}
+
+#[tokio::test]
+async fn dispatch_consults_injected_environment() {
+    let service =
+        Service::<Vault, _, Policy>::with_env(MemoryStore::new(), Policy { daily_limit: 100 });
+
+    let events = service.dispatch("v1", WithdrawCash(50)).await.unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type, "vault.withdrawn");
+
+    let err = service.dispatch("v1", WithdrawCash(200)).await.unwrap_err();
+    assert!(matches!(
+        err,
+        ServiceError::Rejected(VaultError::ExceedsLimit { limit: 100 })
+    ));
+}

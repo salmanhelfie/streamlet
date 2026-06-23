@@ -11,6 +11,8 @@ description = "Restate durable-execution integration for the streamlet toolkit."
 streamlet = { workspace = true }
 restate-sdk.workspace = true
 serde.workspace = true
+paste = "1"
 
 [dev-dependencies]
 thiserror.workspace = true
+serde.workspace = true

@@ -61,7 +61,17 @@ use std::sync::Arc;
 use restate_sdk::errors::{HandlerError, HandlerResult, TerminalError};
 use restate_sdk::serde::Json;
 
-use streamlet::{Aggregate, EventStore, Recorded, Service, ServiceError};
+use streamlet::{Aggregate, CommandKind, EventStore, Handles, Recorded, Service, ServiceError};
+
+#[doc(hidden)]
+pub use paste;
+
+/// Re-exports used by the [`durable_object!`] macro so callers don't have to
+/// import streamlet's types directly. Not part of the stable API.
+#[doc(hidden)]
+pub mod reexport {
+    pub use streamlet::{Aggregate, Recorded, Service};
+}
 
 /// Map a [`ServiceError`] onto a Restate [`HandlerError`].
 ///
@@ -130,4 +140,135 @@ where
 {
     let (state, _revision) = service.load(&id).await.map_err(map_service_error)?;
     Ok(Json(project(&state)))
+}
+
+/// A journaled action that submits a strongly-typed [`CommandKind`] against an
+/// aggregate instance — the durable counterpart to
+/// [`Service::submit`](streamlet::Service::submit).
+///
+/// This is what the [`durable_object!`] macro calls under the hood, but it is
+/// also usable directly inside any `ctx.run(..)`:
+///
+/// ```ignore
+/// let Json(events) = ctx
+///     .run(|| submit_command(service.clone(), id.clone(), Deposit(100)))
+///     .await?;
+/// ```
+pub async fn submit_command<A, S, C>(
+    service: Arc<Service<A, S>>,
+    id: String,
+    command: C,
+) -> HandlerResult<Json<Vec<Recorded<A::Event>>>>
+where
+    A: Aggregate + Handles<C> + 'static,
+    S: EventStore + 'static,
+    C: CommandKind + Send + 'static,
+{
+    service
+        .submit(&id, command)
+        .await
+        .map(Json)
+        .map_err(map_service_error)
+}
+
+/// Generate a Restate Virtual Object from an aggregate and a command list — the
+/// durable sibling of [`streamlet::declare_service!`].
+///
+/// One declaration yields both the `#[restate_sdk::object]` trait and a ready
+/// `<Name>Server` implementation. Each method takes its command as JSON input,
+/// submits it through [`submit_command`] inside `ctx.run` (so Restate journals
+/// the append and replays it on retry), and returns the recorded events. The
+/// rejection / infrastructure split is preserved end to end: business
+/// rejections become a `TerminalError`, store failures stay retryable.
+///
+/// Each command type must derive `CommandKind`, be `Clone`, and be
+/// `serde::Serialize + serde::Deserialize` (Restate needs to (de)serialize the
+/// handler input). The aggregate must implement `Handles<C>` for each command.
+///
+/// ```ignore
+/// durable_object! {
+///     /// One bank account per object key.
+///     pub object AccountObject for Account, store = MemoryStore {
+///         open     => Open,
+///         deposit  => Deposit,
+///         withdraw => Withdraw,
+///     }
+/// }
+///
+/// // Generates `trait AccountObject` and `struct AccountObjectServer`:
+/// let server = AccountObjectServer::new(Arc::new(Service::new(MemoryStore::new())));
+/// // HttpServer::new(Endpoint::builder().bind(server.serve()).build())...
+/// ```
+#[macro_export]
+macro_rules! durable_object {
+    (
+        $(#[$meta:meta])*
+        $vis:vis object $obj:ident for $agg:ty, store = $store:ty {
+            $( $(#[$mmeta:meta])* $method:ident => $cmd:ty ),* $(,)?
+        }
+    ) => {
+        #[::restate_sdk::object]
+        $(#[$meta])*
+        $vis trait $obj {
+            $(
+                $(#[$mmeta])*
+                async fn $method(
+                    command: ::restate_sdk::serde::Json<$cmd>,
+                ) -> ::core::result::Result<
+                    ::restate_sdk::serde::Json<
+                        ::std::vec::Vec<
+                            $crate::reexport::Recorded<<$agg as $crate::reexport::Aggregate>::Event>,
+                        >,
+                    >,
+                    ::restate_sdk::errors::HandlerError,
+                >;
+            )*
+        }
+
+        $crate::paste::paste! {
+            #[doc = concat!("Restate handler implementation for [`", stringify!($obj), "`].")]
+            #[derive(::core::clone::Clone)]
+            $vis struct [<$obj Server>] {
+                service: ::std::sync::Arc<$crate::reexport::Service<$agg, $store>>,
+            }
+
+            impl [<$obj Server>] {
+                /// Wrap a service so it can be served as a Restate object.
+                $vis fn new(
+                    service: ::std::sync::Arc<$crate::reexport::Service<$agg, $store>>,
+                ) -> Self {
+                    Self { service }
+                }
+            }
+
+            impl $obj for [<$obj Server>] {
+                $(
+                    async fn $method(
+                        &self,
+                        ctx: ::restate_sdk::prelude::ObjectContext<'_>,
+                        command: ::restate_sdk::serde::Json<$cmd>,
+                    ) -> ::core::result::Result<
+                        ::restate_sdk::serde::Json<
+                            ::std::vec::Vec<
+                                $crate::reexport::Recorded<<$agg as $crate::reexport::Aggregate>::Event>,
+                            >,
+                        >,
+                        ::restate_sdk::errors::HandlerError,
+                    > {
+                        let id = ctx.key().to_string();
+                        let service = ::core::clone::Clone::clone(&self.service);
+                        let ::restate_sdk::serde::Json(command) = command;
+                        let result = ctx
+                            .run(|| $crate::submit_command(
+                                ::core::clone::Clone::clone(&service),
+                                id.clone(),
+                                ::core::clone::Clone::clone(&command),
+                            ))
+                            .await?;
+                        ::core::result::Result::Ok(result)
+                    }
+                )*
+            }
+        }
+    };
 }
