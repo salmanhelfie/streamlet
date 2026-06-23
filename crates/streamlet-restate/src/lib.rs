@@ -66,6 +66,11 @@ use streamlet::{Aggregate, CommandKind, EventStore, Handles, Recorded, Service, 
 #[doc(hidden)]
 pub use paste;
 
+/// Re-export of [`streamlet::declare_service!`] so the unified [`service!`]
+/// macro can emit the in-process service without the caller importing it.
+#[doc(inline)]
+pub use streamlet::declare_service;
+
 /// Re-exports used by the [`durable_object!`] macro so callers don't have to
 /// import streamlet's types directly. Not part of the stable API.
 #[doc(hidden)]
@@ -268,6 +273,60 @@ macro_rules! durable_object {
                         ::core::result::Result::Ok(result)
                     }
                 )*
+            }
+        }
+    };
+}
+
+/// One declaration, *both* backends — the unified sibling of wee-events'
+/// `service!`.
+///
+/// From a single aggregate + command list this emits **both** the in-process
+/// typed service (via [`streamlet::declare_service!`]) **and** the durable
+/// Restate object (via [`durable_object!`]). Business code can then target the
+/// in-process `Service`/[`TypedExecutor`](streamlet::TypedExecutor) for tests
+/// and the generated Restate object for production from the same source of
+/// truth.
+///
+/// ```ignore
+/// streamlet_restate::service! {
+///     /// A bank account, in-process and durable.
+///     pub Account, store = MemoryStore {
+///         service AccountService,   // -> struct AccountService<S>
+///         object  AccountObject,    // -> trait AccountObject + struct AccountObjectServer
+///         commands {
+///             open     => Open,
+///             deposit  => Deposit,
+///             withdraw => Withdraw,
+///         }
+///     }
+/// }
+/// ```
+///
+/// The command list obeys the same rules as [`durable_object!`]: each command
+/// derives `CommandKind`, is `Clone`, and is `serde::Serialize + Deserialize`,
+/// and the aggregate implements `Handles<C>` for each.
+#[macro_export]
+macro_rules! service {
+    (
+        $(#[$meta:meta])*
+        $vis:vis $agg:ty, store = $store:ty {
+            service $svc:ident,
+            object  $obj:ident,
+            commands { $( $(#[$mmeta:meta])* $method:ident => $cmd:ty ),* $(,)? }
+        }
+    ) => {
+        $crate::declare_service! {
+            $(#[$meta])*
+            $vis service $svc for $agg {
+                $( $(#[$mmeta])* $method => $cmd ),*
+            }
+        }
+
+        $crate::durable_object! {
+            $(#[$meta])*
+            $vis object $obj for $agg, store = $store {
+                $( $(#[$mmeta])* $method => $cmd ),*
             }
         }
     };

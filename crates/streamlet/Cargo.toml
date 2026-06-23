@@ -21,13 +21,20 @@ serde_json.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+tracing.workspace = true
 libsql = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio.workspace = true
 futures.workspace = true
+proptest = "1"
+criterion = { version = "0.5", features = ["async_tokio"] }
 
 [[test]]
 name = "store_conformance"
 path = "tests/store_conformance.rs"
+
+[[bench]]
+name = "event_store"
+harness = false

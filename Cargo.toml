@@ -15,7 +15,10 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/you/streamlet"
+repository = "https://github.com/salmanhelfie/streamlet"
+homepage = "https://github.com/salmanhelfie/streamlet"
+keywords = ["event-sourcing", "cqrs", "ddd", "aggregate", "restate"]
+categories = ["data-structures", "asynchronous"]
 
 [workspace.dependencies]
 # Internal crates
@@ -31,6 +34,7 @@ thiserror = "2"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 futures = "0.3"
+tracing = "0.1"
 
 # Derive macro toolchain
 syn = { version = "2", features = ["full"] }

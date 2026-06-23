@@ -21,7 +21,6 @@ use std::sync::Arc;
 use restate_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
 use streamlet::prelude::*;
-use streamlet_restate::durable_object;
 
 // --- Domain -----------------------------------------------------------------
 
@@ -125,19 +124,45 @@ impl Handles<Withdraw> for Account {
     }
 }
 
-// --- One declaration -> a full Restate Virtual Object -----------------------
+// --- One declaration -> in-process service AND a Restate Virtual Object -----
 
-durable_object! {
-    /// One bank account per object key, served durably.
-    pub object AccountObject for Account, store = MemoryStore {
-        open     => Open,
-        deposit  => Deposit,
-        withdraw => Withdraw,
+streamlet_restate::service! {
+    /// One bank account per object key — in-process and durable.
+    pub Account, store = MemoryStore {
+        service AccountService,
+        object  AccountObject,
+        commands {
+            open     => Open,
+            deposit  => Deposit,
+            withdraw => Withdraw,
+        }
     }
+}
+
+/// Backend-agnostic business logic: works against any `TypedExecutor<Account>`
+/// — the in-process `Service` in tests, the durable path in production.
+async fn open_and_fund<X>(exec: &X, id: &str) -> Result<(), ServiceError<AccountError>>
+where
+    X: TypedExecutor<Account>,
+{
+    exec.submit(
+        id,
+        Open {
+            owner: "Alice".into(),
+        },
+    )
+    .await?;
+    exec.submit(id, Deposit { amount: 100 }).await?;
+    Ok(())
 }
 
 #[tokio::main]
 async fn main() {
+    // The same aggregate, exercised in-process via the generated typed service.
+    let accounts = AccountService::new(MemoryStore::new());
+    open_and_fund(accounts.service(), "alice").await.unwrap();
+    println!("in-process: opened and funded 'alice'");
+
     // A real deployment would use a persistent store (e.g. SqliteStore).
     let service = Arc::new(Service::<Account, _>::new(MemoryStore::new()));
     let server = AccountObjectServer::new(service);

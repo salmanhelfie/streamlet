@@ -70,22 +70,33 @@ mod handler;
 mod ids;
 mod macros;
 mod service;
+mod snapshot;
 pub mod store;
+pub mod subscription;
 pub mod testing;
+pub mod upcast;
 
 pub use aggregate::{render, render_from, Aggregate, View};
 pub use command::{Command, NoCommand};
 pub use error::{ServiceError, StoreError};
-pub use event::{DomainEvent, ExpectedRevision, Metadata, Recorded};
+pub use event::{
+    meta_keys, DomainEvent, ExpectedRevision, Metadata, MetadataExt, RawEvent, Recorded,
+};
 pub use handler::{CommandKind, Handles, HandlesIn};
-pub use ids::StreamId;
+pub use ids::{AggregateType, EventId, Revision, StreamId};
+pub use upcast::{Upcaster, Upcasters};
 
 /// Re-export of [`async_trait::async_trait`], so implementors of
 /// [`HandlesIn`] can write `#[streamlet::async_trait]` without adding the
 /// `async-trait` crate to their own dependencies.
 pub use async_trait::async_trait;
-pub use service::{Entity, Executor, Service};
+pub use service::{Entity, Executor, Service, TypedExecutor};
+pub use snapshot::{SnapshotEnvelope, SnapshotPolicy};
 pub use store::{catch_up_view, replay_view, DocumentStore, EventStore, Projection};
+pub use subscription::{
+    already_processed, checkpoint_position, mark_processed, pump, run_publisher, run_reactor,
+    EventPublisher, InMemoryPublisher, PublishedEvent, Reactor,
+};
 
 #[cfg(feature = "memory")]
 pub use store::memory::MemoryStore;
@@ -103,10 +114,13 @@ pub mod prelude {
     pub use crate::command::{Command, NoCommand};
     pub use crate::declare_service;
     pub use crate::error::{ServiceError, StoreError};
-    pub use crate::event::{DomainEvent, ExpectedRevision, Metadata, Recorded};
+    pub use crate::event::{
+        meta_keys, DomainEvent, ExpectedRevision, Metadata, MetadataExt, Recorded,
+    };
     pub use crate::handler::{CommandKind, Handles, HandlesIn};
-    pub use crate::ids::StreamId;
-    pub use crate::service::{Entity, Executor, Service};
+    pub use crate::ids::{AggregateType, EventId, Revision, StreamId};
+    pub use crate::service::{Entity, Executor, Service, TypedExecutor};
+    pub use crate::snapshot::{SnapshotEnvelope, SnapshotPolicy};
     pub use crate::store::{catch_up_view, replay_view, DocumentStore, EventStore, Projection};
     pub use async_trait::async_trait;
     pub use streamlet_derive::{Command, CommandKind, DomainEvent};

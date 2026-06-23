@@ -103,7 +103,7 @@ sequenceDiagram
 
 | Crate | What it is |
 | --- | --- |
-| [`crates/streamlet`](crates/streamlet) | The core toolkit: `DomainEvent`, `Command`, `Aggregate`, `View`, `EventStore`, `DocumentStore`, `Service`, `Executor`, projections, the in-memory store and the libSQL store. |
+| [`crates/streamlet`](crates/streamlet) | The core toolkit: `DomainEvent`, `Command`, `Aggregate`, `View`, `EventStore`, `DocumentStore`, `Service`, `Executor`/`TypedExecutor`, typed IDs, snapshots, upcasting, subscriptions/outbox/sagas, projections, the in-memory store and the libSQL store. |
 | [`crates/streamlet-derive`](crates/streamlet-derive) | `#[derive(DomainEvent)]`, `#[derive(Command)]` and `#[derive(CommandKind)]` proc-macros that give every variant / command a stable name (with optional `prefix`, `rename`, and `rename_all`). |
 | [`crates/streamlet-restate`](crates/streamlet-restate) | Run the same `Service` durably inside a Restate handler, preserving the rejection / infrastructure error split. |
 | [`examples/counter`](examples/counter) | A runnable in-process counter demo using the enum `Command` + `execute` path (memory + optional libSQL). |
@@ -309,6 +309,54 @@ Folding events into state is "rendering". Aggregates render themselves; read
 models implement `View` and are rebuilt with `replay_view` or kept up to date
 incrementally with `catch_up_view` (which persists the result via a
 `DocumentStore`).
+
+### Backend-agnostic execution
+
+`TypedExecutor<A>` lets you write business logic once and point it at any
+backend — the in-process `Service` in tests, a durable path in production —
+without touching the call site:
+
+```rust
+async fn open_and_fund<X>(exec: &X, id: &str) -> Result<(), ServiceError<AccountError>>
+where
+    X: TypedExecutor<Account>,
+{
+    exec.submit(id, Open { owner: "Alice".into() }).await?;
+    exec.submit(id, Deposit { amount: 100 }).await?;
+    Ok(())
+}
+```
+
+## Production building blocks
+
+Streamlet ships the pieces a real event-sourced system needs, all built on the
+same append-only log and document store:
+
+- **Snapshots** — skip re-folding long streams. Pick a `SnapshotPolicy`, use
+  `execute_snapshotting`, and `load_snapshotted` folds only events after the
+  latest snapshot (via `EventStore::load_from`).
+- **Upcasting** — evolve persisted event shapes without rewriting history.
+  Register `Upcaster`s on an `Upcasters` registry; old JSON is rewritten forward
+  at load time (`EventStore::load_raw` + `Upcasters::render`).
+- **Catch-up subscriptions** — `pump` walks the log from a persisted checkpoint
+  and resumes exactly where it left off; `checkpoint_position` reports progress.
+- **Outbox / publishing** — implement `EventPublisher` (a broker, webhook, …)
+  and drive it with `run_publisher` for a resumable, at-least-once outbox.
+  `InMemoryPublisher` is provided for tests.
+- **Process managers / sagas** — implement `Reactor` (event → commands) and
+  drive it with `run_reactor`; `already_processed`/`mark_processed` give explicit
+  idempotency when you need it.
+- **Correlation metadata** — `MetadataExt` adds typed `correlation_id`,
+  `causation_id` and `actor` helpers over the plain metadata map.
+- **Tracing** — the write path is instrumented with `tracing` spans.
+
+```rust
+// Snapshot every 100 events; later loads fold only the tail.
+service.execute_snapshotting(id, command, SnapshotPolicy::EveryNEvents(100)).await?;
+
+// A resumable, at-least-once outbox.
+run_publisher::<AccountEvent, _, _, _>(events, documents, "broker", &publisher).await?;
+```
 
 ## Stores
 

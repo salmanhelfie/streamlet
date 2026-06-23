@@ -118,6 +118,47 @@ async fn declared_service_exposes_named_methods() {
     assert!(state.on);
 }
 
+// Business logic written once against the typed-executor abstraction; here it
+// runs in-process, but the same function targets any `TypedExecutor<Toggle>`.
+async fn cycle<X: TypedExecutor<Toggle>>(
+    exec: &X,
+    id: &str,
+) -> Result<(), ServiceError<ToggleError>> {
+    exec.submit(id, TurnOn).await?;
+    exec.submit(id, TurnOff).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn backend_agnostic_typed_executor() {
+    let service = Service::<Toggle, _>::new(MemoryStore::new());
+    cycle(&service, "sw").await.unwrap();
+
+    let (state, _) = service.load("sw").await.unwrap();
+    assert!(!state.on);
+}
+
+#[test]
+fn recorded_exposes_typed_ids() {
+    use streamlet::{AggregateType, Revision};
+    let r = Recorded {
+        id: "evt-1".to_string(),
+        aggregate_type: "toggle".to_string(),
+        stream_id: "sw".to_string(),
+        version: 3,
+        global_position: 42,
+        event_type: "toggle.turned_on".to_string(),
+        payload: ToggleEvent::TurnedOn,
+        recorded_at: 0,
+        metadata: Default::default(),
+    };
+    assert_eq!(r.event_id().as_str(), "evt-1");
+    assert_eq!(r.aggregate(), AggregateType::new("toggle"));
+    assert_eq!(r.stream().as_str(), "sw");
+    assert_eq!(r.revision(), Revision::new(3));
+    assert_eq!(r.position(), Revision::new(42));
+}
+
 #[test]
 fn scenario_asserts_emitted_events() {
     Scenario::<Toggle>::empty()

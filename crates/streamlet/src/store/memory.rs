@@ -159,6 +159,26 @@ impl EventStore for MemoryStore {
         Ok(out)
     }
 
+    async fn load_from<E: DomainEvent>(
+        &self,
+        aggregate_type: &str,
+        stream_id: &str,
+        after_version: u64,
+    ) -> Result<Vec<Recorded<E>>, StoreError> {
+        let inner = self.inner.lock().expect("memory store poisoned");
+        let mut out = Vec::new();
+        for (idx, stored) in inner.log.iter().enumerate() {
+            if stored.aggregate_type == aggregate_type
+                && stored.stream_id == stream_id
+                && stored.version > after_version
+            {
+                out.push(stored.clone().into_recorded::<E>(idx as u64 + 1)?);
+            }
+        }
+        out.sort_by_key(|e| e.version);
+        Ok(out)
+    }
+
     async fn read_all<E: DomainEvent>(
         &self,
         after_global_position: u64,

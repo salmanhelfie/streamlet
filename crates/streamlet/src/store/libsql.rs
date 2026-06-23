@@ -71,6 +71,17 @@ impl SqliteStore {
 
     async fn from_database(db: Database) -> Result<Self, StoreError> {
         let conn = db.connect().map_err(backend)?;
+        // Pragmas first: WAL for read/write concurrency, NORMAL sync for a sane
+        // durability/throughput trade-off, a busy timeout so brief writer
+        // contention waits instead of erroring, and enforced foreign keys.
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA busy_timeout = 5000;
+             PRAGMA foreign_keys = ON;",
+        )
+        .await
+        .map_err(backend)?;
         conn.execute_batch(SCHEMA).await.map_err(backend)?;
         Ok(Self {
             _db: db,
@@ -182,6 +193,29 @@ impl EventStore for SqliteStore {
                 "SELECT global_position, event_id, aggregate_type, stream_id, version, event_type, payload, metadata, recorded_at \
                  FROM events WHERE aggregate_type = ?1 AND stream_id = ?2 ORDER BY version ASC",
                 params![aggregate_type, stream_id],
+            )
+            .await
+            .map_err(backend)?;
+
+        let mut out = Vec::new();
+        while let Some(row) = rows.next().await.map_err(backend)? {
+            out.push(row_to_recorded::<E>(&row)?);
+        }
+        Ok(out)
+    }
+
+    async fn load_from<E: DomainEvent>(
+        &self,
+        aggregate_type: &str,
+        stream_id: &str,
+        after_version: u64,
+    ) -> Result<Vec<Recorded<E>>, StoreError> {
+        let conn = self.conn.lock().await;
+        let mut rows = conn
+            .query(
+                "SELECT global_position, event_id, aggregate_type, stream_id, version, event_type, payload, metadata, recorded_at \
+                 FROM events WHERE aggregate_type = ?1 AND stream_id = ?2 AND version > ?3 ORDER BY version ASC",
+                params![aggregate_type, stream_id, after_version as i64],
             )
             .await
             .map_err(backend)?;

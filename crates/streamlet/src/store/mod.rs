@@ -15,7 +15,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::error::StoreError;
-use crate::event::{DomainEvent, ExpectedRevision, Metadata, Recorded};
+use crate::event::{DomainEvent, ExpectedRevision, Metadata, RawEvent, Recorded};
 
 #[cfg(feature = "libsql")]
 pub mod libsql;
@@ -50,6 +50,36 @@ pub trait EventStore: Send + Sync {
         aggregate_type: &str,
         stream_id: &str,
     ) -> Result<Vec<Recorded<E>>, StoreError>;
+
+    /// Load only the events of a stream *after* `after_version`, in order.
+    ///
+    /// This is the primitive behind snapshotting: rehydrate from a snapshot at
+    /// version `v`, then fold just `load_from(.., v)` on top. The default
+    /// implementation filters [`load`](Self::load); persistent stores should
+    /// override it to push the bound into the query.
+    async fn load_from<E: DomainEvent>(
+        &self,
+        aggregate_type: &str,
+        stream_id: &str,
+        after_version: u64,
+    ) -> Result<Vec<Recorded<E>>, StoreError> {
+        let all = self.load::<E>(aggregate_type, stream_id).await?;
+        Ok(all
+            .into_iter()
+            .filter(|e| e.version > after_version)
+            .collect())
+    }
+
+    /// Load a stream without decoding into a concrete event type — payloads come
+    /// back as [`RawEvent`] JSON. This is the entry point for
+    /// [`upcasting`](crate::upcast) old event shapes before decoding.
+    async fn load_raw(
+        &self,
+        aggregate_type: &str,
+        stream_id: &str,
+    ) -> Result<Vec<Recorded<RawEvent>>, StoreError> {
+        self.load::<RawEvent>(aggregate_type, stream_id).await
+    }
 
     /// Read events of type `E` across *all* streams, ordered by
     /// `global_position`, starting strictly after `after_global_position`.
