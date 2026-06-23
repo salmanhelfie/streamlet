@@ -1,0 +1,33 @@
+[package]
+name = "streamlet"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A small, ergonomic event-sourcing toolkit: aggregates, commands, events, rendering, services and stores."
+
+[features]
+default = ["memory"]
+# In-memory event/document store, always handy for tests.
+memory = []
+# SQLite event + document store backed by libSQL.
+libsql = ["dep:libsql", "dep:tokio"]
+
+[dependencies]
+streamlet-derive.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+libsql = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio.workspace = true
+futures.workspace = true
+
+[[test]]
+name = "store_conformance"
+path = "tests/store_conformance.rs"

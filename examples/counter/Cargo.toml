@@ -1,0 +1,19 @@
+[package]
+name = "counter-example"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[features]
+# Run the demo against the persistent libSQL store as well as in-memory.
+libsql = ["streamlet/libsql"]
+
+[dependencies]
+streamlet = { workspace = true }
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[[bin]]
+name = "counter"
+path = "src/main.rs"

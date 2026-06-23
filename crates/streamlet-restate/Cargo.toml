@@ -1,0 +1,16 @@
+[package]
+name = "streamlet-restate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Restate durable-execution integration for the streamlet toolkit."
+
+[dependencies]
+streamlet = { workspace = true }
+restate-sdk.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+thiserror.workspace = true

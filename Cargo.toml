@@ -1,0 +1,43 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/streamlet",
+    "crates/streamlet-derive",
+    "crates/streamlet-restate",
+    "examples/counter",
+    "examples/restate-counter",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/you/streamlet"
+
+[workspace.dependencies]
+# Internal crates
+streamlet = { path = "crates/streamlet" }
+streamlet-derive = { path = "crates/streamlet-derive" }
+streamlet-restate = { path = "crates/streamlet-restate" }
+
+# Shared third-party deps (single source of truth for versions)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+futures = "0.3"
+
+# Derive macro toolchain
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+
+# Backends
+libsql = "0.9"
+restate-sdk = "0.10"
+
+[profile.release]
+lto = "thin"

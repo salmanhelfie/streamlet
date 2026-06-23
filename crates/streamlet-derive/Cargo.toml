@@ -1,0 +1,16 @@
+[package]
+name = "streamlet-derive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Derive macros for the streamlet toolkit (DomainEvent, Command)."
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn.workspace = true
+quote.workspace = true
+proc-macro2.workspace = true
