@@ -2,13 +2,15 @@
 //! container `prefix` and per-variant `rename` knobs.
 
 use serde::{Deserialize, Serialize};
-use streamlet::{Command, DomainEvent};
+use streamlet::{Command, CommandKind, DomainEvent};
 
 #[derive(Clone, Serialize, Deserialize, DomainEvent)]
 #[domain_event(prefix = "acct.")]
 enum AccountEvent {
     Opened,
-    Deposited { cents: u64 },
+    Deposited {
+        cents: u64,
+    },
     Withdrew(u64),
     #[event(rename = "Closed")]
     Terminated,
@@ -26,13 +28,21 @@ enum AccountCommand {
 #[test]
 fn event_names_use_prefix_and_rename_across_variant_shapes() {
     assert_eq!(AccountEvent::Opened.event_type(), "acct.Opened");
-    assert_eq!(AccountEvent::Deposited { cents: 1 }.event_type(), "acct.Deposited");
+    assert_eq!(
+        AccountEvent::Deposited { cents: 1 }.event_type(),
+        "acct.Deposited"
+    );
     assert_eq!(AccountEvent::Withdrew(1).event_type(), "acct.Withdrew");
     assert_eq!(AccountEvent::Terminated.event_type(), "acct.Closed");
 
     assert_eq!(
         AccountEvent::event_types(),
-        &["acct.Opened", "acct.Deposited", "acct.Withdrew", "acct.Closed"]
+        &[
+            "acct.Opened",
+            "acct.Deposited",
+            "acct.Withdrew",
+            "acct.Closed"
+        ]
     );
 }
 
@@ -46,4 +56,40 @@ fn command_names_default_to_variant_and_honour_rename() {
         AccountCommand::command_types(),
         &["Open", "Deposit", "Close"]
     );
+}
+
+#[derive(Clone, Serialize, Deserialize, DomainEvent)]
+#[domain_event(prefix = "order.", rename_all = "snake_case")]
+enum OrderEvent {
+    OrderPlaced,
+    LineItemAdded {
+        sku: String,
+    },
+    #[event(rename = "shipped")]
+    OrderShipped,
+}
+
+#[test]
+fn rename_all_snake_cases_each_variant_and_honours_explicit_rename() {
+    assert_eq!(OrderEvent::OrderPlaced.event_type(), "order.order_placed");
+    assert_eq!(
+        OrderEvent::LineItemAdded { sku: "x".into() }.event_type(),
+        "order.line_item_added"
+    );
+    // explicit rename wins over rename_all
+    assert_eq!(OrderEvent::OrderShipped.event_type(), "order.shipped");
+}
+
+#[derive(CommandKind)]
+struct Reboot;
+
+#[derive(CommandKind)]
+#[command_kind(prefix = "sys.", name = "Shutdown")]
+struct PowerOff;
+
+#[test]
+fn command_kind_derives_a_stable_name() {
+    assert_eq!(Reboot::NAME, "Reboot");
+    assert_eq!(PowerOff::NAME, "sys.Shutdown");
+    assert_eq!(Reboot.command_name(), "Reboot");
 }

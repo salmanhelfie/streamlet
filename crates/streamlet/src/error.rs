@@ -5,7 +5,9 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum StoreError {
     /// Optimistic concurrency check failed: someone else wrote to the stream.
-    #[error("concurrency conflict on stream `{stream_id}`: expected {expected}, found version {actual}")]
+    #[error(
+        "concurrency conflict on stream `{stream_id}`: expected {expected}, found version {actual}"
+    )]
     Conflict {
         stream_id: String,
         expected: String,

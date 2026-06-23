@@ -1,5 +1,8 @@
 # streamlet
 
+[![CI](https://github.com/salmanhelfie/streamlet/actions/workflows/ci.yml/badge.svg)](https://github.com/salmanhelfie/streamlet/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+
 A small, ergonomic event-sourcing toolkit for Rust. The whole model fits in your
 head: **events** are things that happened, **commands** are things you want to
 happen, **aggregates** decide one from the other, **stores** persist the events,
@@ -101,9 +104,10 @@ sequenceDiagram
 | Crate | What it is |
 | --- | --- |
 | [`crates/streamlet`](crates/streamlet) | The core toolkit: `DomainEvent`, `Command`, `Aggregate`, `View`, `EventStore`, `DocumentStore`, `Service`, `Executor`, projections, the in-memory store and the libSQL store. |
-| [`crates/streamlet-derive`](crates/streamlet-derive) | `#[derive(DomainEvent)]` and `#[derive(Command)]` proc-macros that give every enum variant a stable name (with optional `prefix` / `rename`). |
+| [`crates/streamlet-derive`](crates/streamlet-derive) | `#[derive(DomainEvent)]`, `#[derive(Command)]` and `#[derive(CommandKind)]` proc-macros that give every variant / command a stable name (with optional `prefix`, `rename`, and `rename_all`). |
 | [`crates/streamlet-restate`](crates/streamlet-restate) | Run the same `Service` durably inside a Restate handler, preserving the rejection / infrastructure error split. |
-| [`examples/counter`](examples/counter) | A runnable in-process counter demo (memory + optional libSQL). |
+| [`examples/counter`](examples/counter) | A runnable in-process counter demo using the enum `Command` + `execute` path (memory + optional libSQL). |
+| [`examples/bank-account`](examples/bank-account) | A typed-command demo: `CommandKind` + `Handles<C>` + `declare_service!`, with given/when/then tests. |
 | [`examples/restate-counter`](examples/restate-counter) | The same counter exposed as a Restate Virtual Object. |
 
 ## Core concepts
@@ -172,6 +176,55 @@ assert_eq!(
 service.execute("counter-1", CounterCommand::Increment(5)).await?;
 ```
 
+### Two ways to handle a command
+
+The enum `Command` + `execute` above is the quick path. When you want the
+compiler to police *which* commands an aggregate accepts, reach for the typed
+model: each command is its own type (`CommandKind`), the aggregate implements
+`Handles<C>` once per command, and `Service::submit` is bound on `A: Handles<C>`
+— so submitting a command the aggregate doesn't handle is a **compile error**,
+not a runtime surprise.
+
+```rust
+#[derive(CommandKind)] struct Deposit(u64);
+#[derive(CommandKind)] struct Withdraw(u64);
+
+impl Handles<Deposit> for Account {
+    fn handle(&self, Deposit(amount): Deposit) -> Result<Vec<AccountEvent>, AccountError> {
+        Ok(vec![AccountEvent::Deposited { amount }])
+    }
+}
+// ...and a Handles<Withdraw> impl with the overdraft rule.
+
+// Declare a typed service once; its methods read like an API.
+declare_service! {
+    pub service AccountService for Account {
+        deposit  => Deposit,
+        withdraw => Withdraw,
+    }
+}
+
+let accounts = AccountService::new(MemoryStore::new());
+accounts.deposit("alice", Deposit(100)).await?;
+// accounts.deposit("alice", Withdraw(10)).await?;  // ← won't compile
+```
+
+Aggregates that only use the typed path set `type Command = NoCommand`. See
+[`examples/bank-account`](examples/bank-account) for the whole picture.
+
+### Testing aggregates
+
+Aggregate decisions are pure, so the `streamlet::testing` module offers a
+given/when/then harness that needs no store:
+
+```rust
+use streamlet::testing::Scenario;
+
+Scenario::<Account>::given([AccountEvent::Opened { owner: "Alice".into() }])
+    .when_typed(Withdraw(100))
+    .then_rejected_with(AccountError::InsufficientFunds { balance: 0, requested: 100 });
+```
+
 ### Rejections vs. infrastructure errors
 
 Every `execute` returns `Result<_, ServiceError<R>>`, which keeps the two failure
@@ -233,14 +286,16 @@ all the way through the durable path.
 ## Running it
 
 ```bash
-# In-process counter demo (memory store)
+# In-process counter demo (enum Command + execute)
 cargo run -p counter-example --bin counter
+cargo run -p counter-example --bin counter --features libsql   # also exercise libSQL
 
-# ...and also against the persistent libSQL store
-cargo run -p counter-example --bin counter --features libsql
+# Typed-command bank-account demo (CommandKind + Handles<C> + declare_service!)
+cargo run -p bank-account-example --bin bank-account
+cargo run -p bank-account-example --bin bank-account --features libsql
 
 # Tests across both store implementations
-cargo test -p streamlet --features libsql
+cargo test --workspace --all-features
 
 # Restate counter endpoint
 cargo run -p restate-counter-example --bin restate-counter
@@ -249,6 +304,9 @@ cargo run -p restate-counter-example --bin restate-counter
 #   curl localhost:8080/CounterObject/my-counter/increment --json '5'
 #   curl localhost:8080/CounterObject/my-counter/get
 ```
+
+If you have [`just`](https://github.com/casey/just) installed, `just check` runs
+the same format, clippy and test steps as CI.
 
 ## Feature flags (`streamlet`)
 
@@ -265,4 +323,8 @@ compiles libSQL's bundled SQLite C core, so a C compiler must be available
 
 ## License
 
-MIT OR Apache-2.0.
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option. Unless you explicitly state
+otherwise, any contribution intentionally submitted for inclusion in this
+project by you shall be dual licensed as above, without any additional terms or
+conditions.

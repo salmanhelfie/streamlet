@@ -4,8 +4,10 @@ use async_trait::async_trait;
 
 use crate::aggregate::{render_from, Aggregate};
 use crate::command::Command;
-use crate::error::ServiceError;
+use crate::error::{ServiceError, StoreError};
 use crate::event::{ExpectedRevision, Metadata, Recorded};
+use crate::handler::{CommandKind, Handles};
+use crate::ids::StreamId;
 use crate::store::EventStore;
 
 /// A typed application service for a single [`Aggregate`].
@@ -98,6 +100,133 @@ where
             .append::<A::Event>(A::TYPE, id, expected, &new_events, &metadata)
             .await?;
         Ok(recorded)
+    }
+
+    /// Execute a single, strongly-typed [`CommandKind`] against an instance.
+    ///
+    /// This is the compile-time-checked counterpart to [`execute`](Self::execute):
+    /// the bound `A: Handles<C>` means you can only submit commands the
+    /// aggregate actually implements a handler for. Submitting anything else is
+    /// a *compile error* rather than a runtime rejection.
+    pub async fn submit<C>(
+        &self,
+        id: &str,
+        command: C,
+    ) -> Result<Vec<Recorded<A::Event>>, ServiceError<A::Rejection>>
+    where
+        A: Handles<C>,
+        C: CommandKind,
+    {
+        self.submit_with(id, command, Metadata::new()).await
+    }
+
+    /// Like [`submit`](Self::submit) but attaches `metadata` to every event.
+    pub async fn submit_with<C>(
+        &self,
+        id: &str,
+        command: C,
+        metadata: Metadata,
+    ) -> Result<Vec<Recorded<A::Event>>, ServiceError<A::Rejection>>
+    where
+        A: Handles<C>,
+        C: CommandKind,
+    {
+        let (state, expected) = self.load(id).await?;
+
+        let new_events =
+            <A as Handles<C>>::handle(&state, command).map_err(ServiceError::Rejected)?;
+        if new_events.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let recorded = self
+            .store
+            .append::<A::Event>(A::TYPE, id, expected, &new_events, &metadata)
+            .await?;
+        Ok(recorded)
+    }
+
+    /// Execute a command, transparently retrying on optimistic-concurrency
+    /// conflicts.
+    ///
+    /// When another writer wins the race the stream is re-loaded and the command
+    /// is decided again from the fresh state, up to `max_retries` extra attempts.
+    /// Business [`Rejected`](ServiceError::Rejected) outcomes and non-conflict
+    /// store errors are returned immediately — only a genuine
+    /// [`StoreError::Conflict`] is retried.
+    pub async fn execute_with_retry(
+        &self,
+        id: &str,
+        command: A::Command,
+        max_retries: u32,
+    ) -> Result<Vec<Recorded<A::Event>>, ServiceError<A::Rejection>>
+    where
+        A::Command: Clone,
+    {
+        let mut attempts = 0;
+        loop {
+            match self.execute(id, command.clone()).await {
+                Err(ServiceError::Store(StoreError::Conflict { .. })) if attempts < max_retries => {
+                    attempts += 1;
+                }
+                other => return other,
+            }
+        }
+    }
+
+    /// Get a handle bound to a single aggregate instance, so you don't have to
+    /// repeat the id on every call.
+    pub fn entity(&self, id: impl Into<StreamId>) -> Entity<'_, A, S> {
+        Entity {
+            service: self,
+            id: id.into(),
+        }
+    }
+}
+
+/// A convenience handle bound to one aggregate instance.
+///
+/// Created via [`Service::entity`]. It simply forwards to the underlying service
+/// with the id pre-filled, which reads nicely when you issue several commands
+/// against the same stream.
+pub struct Entity<'a, A, S> {
+    service: &'a Service<A, S>,
+    id: StreamId,
+}
+
+impl<A, S> Entity<'_, A, S>
+where
+    A: Aggregate,
+    S: EventStore,
+{
+    /// The id this handle is bound to.
+    pub fn id(&self) -> &StreamId {
+        &self.id
+    }
+
+    /// Render the current state of this instance.
+    pub async fn state(&self) -> Result<A, ServiceError<A::Rejection>> {
+        Ok(self.service.load(self.id.as_str()).await?.0)
+    }
+
+    /// Execute an enum command against this instance.
+    pub async fn execute(
+        &self,
+        command: A::Command,
+    ) -> Result<Vec<Recorded<A::Event>>, ServiceError<A::Rejection>> {
+        self.service.execute(self.id.as_str(), command).await
+    }
+
+    /// Submit a strongly-typed [`CommandKind`] against this instance.
+    pub async fn submit<C>(
+        &self,
+        command: C,
+    ) -> Result<Vec<Recorded<A::Event>>, ServiceError<A::Rejection>>
+    where
+        A: Handles<C>,
+        C: CommandKind,
+    {
+        self.service.submit(self.id.as_str(), command).await
     }
 }
 

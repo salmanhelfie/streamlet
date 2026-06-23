@@ -7,8 +7,8 @@
 
 use async_trait::async_trait;
 use libsql::{params, Builder, Connection, Database};
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -55,10 +55,7 @@ impl SqliteStore {
     /// Open (creating if necessary) a file-backed database and ensure the schema.
     pub async fn open(path: impl AsRef<std::path::Path>) -> Result<Self, StoreError> {
         let path = path.as_ref().to_string_lossy().to_string();
-        let db = Builder::new_local(path)
-            .build()
-            .await
-            .map_err(backend)?;
+        let db = Builder::new_local(path).build().await.map_err(backend)?;
         Self::from_database(db).await
     }
 
@@ -116,7 +113,10 @@ impl EventStore for SqliteStore {
                 .await
                 .map_err(backend)?;
             let row = rows.next().await.map_err(backend)?;
-            row.map(|r| r.get::<i64>(0)).transpose().map_err(backend)?.unwrap_or(0) as u64
+            row.map(|r| r.get::<i64>(0))
+                .transpose()
+                .map_err(backend)?
+                .unwrap_or(0) as u64
         };
 
         expected

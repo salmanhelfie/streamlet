@@ -1,0 +1,6 @@
+# Normalise line endings: keep source text as LF in the repo.
+* text=auto eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.yml text eol=lf

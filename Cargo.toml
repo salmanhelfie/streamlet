@@ -6,6 +6,7 @@ members = [
     "crates/streamlet-restate",
     "examples/counter",
     "examples/restate-counter",
+    "examples/bank-account",
 ]
 
 [workspace.package]

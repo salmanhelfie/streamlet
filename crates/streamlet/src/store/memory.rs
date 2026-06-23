@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::error::StoreError;

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 /// A domain event payload — usually an `enum` where each variant is a single
 /// thing that happened. Derive it with `#[derive(DomainEvent)]` so every variant

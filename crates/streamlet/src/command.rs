@@ -13,3 +13,41 @@ pub trait Command: Send + Sync {
     where
         Self: Sized;
 }
+
+/// An uninhabited command type for aggregates that drive everything through the
+/// strongly-typed [`Handles<C>`](crate::Handles) / [`Service::submit`] API and
+/// never use the enum [`Service::execute`] path.
+///
+/// Set `type Command = NoCommand` and implement `handle` as `match command {}`:
+///
+/// ```
+/// # use streamlet::prelude::*;
+/// # use serde::{Serialize, Deserialize};
+/// # #[derive(Clone, Serialize, Deserialize, DomainEvent)] enum E { Did }
+/// # #[derive(Debug, thiserror::Error)] #[error("no")] struct R;
+/// #[derive(Default)]
+/// struct MyAggregate;
+/// impl Aggregate for MyAggregate {
+///     type Command = NoCommand;
+///     type Event = E;
+///     type Rejection = R;
+///     const TYPE: &'static str = "my-aggregate";
+///     fn handle(&self, command: NoCommand) -> Result<Vec<E>, R> { match command {} }
+///     fn apply(&mut self, _: &E) {}
+/// }
+/// ```
+///
+/// [`Service::submit`]: crate::Service::submit
+/// [`Service::execute`]: crate::Service::execute
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoCommand {}
+
+impl Command for NoCommand {
+    fn command_type(&self) -> &'static str {
+        match *self {}
+    }
+
+    fn command_types() -> &'static [&'static str] {
+        &[]
+    }
+}

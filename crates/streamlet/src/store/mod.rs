@@ -11,8 +11,8 @@
 //! on by default) and [`libsql::SqliteStore`] (feature `libsql`).
 
 use async_trait::async_trait;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 use crate::error::StoreError;
 use crate::event::{DomainEvent, ExpectedRevision, Metadata, Recorded};

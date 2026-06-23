@@ -141,7 +141,10 @@ where
     service.execute(id, CounterCommand::Decrement(2)).await?;
 
     let (counter, revision) = service.load(id).await?;
-    println!("state after 3 commands: value={} ({:?})", counter.value, revision);
+    println!(
+        "state after 3 commands: value={} ({:?})",
+        counter.value, revision
+    );
 
     // A business-rule rejection — note how it is NOT an infrastructure error.
     match service.execute(id, CounterCommand::Decrement(100)).await {
@@ -155,7 +158,9 @@ where
     }
 
     // A second counter, so the projection spans multiple streams.
-    service.execute("counter-2", CounterCommand::Increment(10)).await?;
+    service
+        .execute("counter-2", CounterCommand::Increment(10))
+        .await?;
     service.execute("counter-2", CounterCommand::Reset).await?;
 
     // Build the projection straight from the event log, then persist it as a
@@ -171,7 +176,10 @@ where
         .await?;
     let persisted: Option<streamlet::store::Projection<ActivityView>> =
         docs.fetch("projections", ActivityView::NAME).await?;
-    println!("persisted projection document: {:?}", persisted.map(|p| p.view));
+    println!(
+        "persisted projection document: {:?}",
+        persisted.map(|p| p.view)
+    );
 
     Ok(())
 }

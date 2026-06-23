@@ -13,8 +13,12 @@ use streamlet::StoreError;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, DomainEvent)]
 #[domain_event(prefix = "test.")]
 enum Ev {
-    Added { n: i64 },
-    Removed { n: i64 },
+    Added {
+        n: i64,
+    },
+    Removed {
+        n: i64,
+    },
     #[event(rename = "Cleared")]
     Reset,
 }
@@ -97,7 +101,13 @@ impl View for SumView {
 async fn append_and_load_suite<S: EventStore>(store: &S) {
     let md = Metadata::new();
     let written = store
-        .append::<Ev>("acc", "a1", ExpectedRevision::NoStream, &[Ev::Added { n: 2 }, Ev::Added { n: 3 }], &md)
+        .append::<Ev>(
+            "acc",
+            "a1",
+            ExpectedRevision::NoStream,
+            &[Ev::Added { n: 2 }, Ev::Added { n: 3 }],
+            &md,
+        )
         .await
         .expect("append");
 
@@ -129,34 +139,61 @@ async fn append_and_load_suite<S: EventStore>(store: &S) {
     assert!(none.is_empty());
 
     // Unknown stream loads as empty.
-    let empty = store.load::<Ev>("acc", "does-not-exist").await.expect("load empty");
+    let empty = store
+        .load::<Ev>("acc", "does-not-exist")
+        .await
+        .expect("load empty");
     assert!(empty.is_empty());
 }
 
 async fn concurrency_suite<S: EventStore>(store: &S) {
     let md = Metadata::new();
     store
-        .append::<Ev>("acc", "c1", ExpectedRevision::NoStream, &[Ev::Added { n: 1 }], &md)
+        .append::<Ev>(
+            "acc",
+            "c1",
+            ExpectedRevision::NoStream,
+            &[Ev::Added { n: 1 }],
+            &md,
+        )
         .await
         .expect("first");
 
     // NoStream on an existing stream must conflict.
     let err = store
-        .append::<Ev>("acc", "c1", ExpectedRevision::NoStream, &[Ev::Added { n: 1 }], &md)
+        .append::<Ev>(
+            "acc",
+            "c1",
+            ExpectedRevision::NoStream,
+            &[Ev::Added { n: 1 }],
+            &md,
+        )
         .await
         .unwrap_err();
     assert!(matches!(err, StoreError::Conflict { .. }), "got {err:?}");
 
     // Exact mismatch must conflict.
     let err = store
-        .append::<Ev>("acc", "c1", ExpectedRevision::Exact(99), &[Ev::Added { n: 1 }], &md)
+        .append::<Ev>(
+            "acc",
+            "c1",
+            ExpectedRevision::Exact(99),
+            &[Ev::Added { n: 1 }],
+            &md,
+        )
         .await
         .unwrap_err();
     assert!(matches!(err, StoreError::Conflict { .. }), "got {err:?}");
 
     // Any always succeeds.
     store
-        .append::<Ev>("acc", "c1", ExpectedRevision::Any, &[Ev::Added { n: 1 }], &md)
+        .append::<Ev>(
+            "acc",
+            "c1",
+            ExpectedRevision::Any,
+            &[Ev::Added { n: 1 }],
+            &md,
+        )
         .await
         .expect("any append");
 
@@ -166,7 +203,13 @@ async fn concurrency_suite<S: EventStore>(store: &S) {
 async fn read_all_suite<S: EventStore>(store: &S) {
     let md = Metadata::new();
     store
-        .append::<Ev>("acc", "r1", ExpectedRevision::Any, &[Ev::Added { n: 1 }, Ev::Added { n: 2 }], &md)
+        .append::<Ev>(
+            "acc",
+            "r1",
+            ExpectedRevision::Any,
+            &[Ev::Added { n: 1 }, Ev::Added { n: 2 }],
+            &md,
+        )
         .await
         .unwrap();
     // Interleave an event of a different type / aggregate.
@@ -175,14 +218,22 @@ async fn read_all_suite<S: EventStore>(store: &S) {
         .await
         .unwrap();
     store
-        .append::<Ev>("acc", "r2", ExpectedRevision::Any, &[Ev::Removed { n: 1 }], &md)
+        .append::<Ev>(
+            "acc",
+            "r2",
+            ExpectedRevision::Any,
+            &[Ev::Removed { n: 1 }],
+            &md,
+        )
         .await
         .unwrap();
 
     // read_all::<Ev> sees only test.* events, in global order.
     let all = store.read_all::<Ev>(0, 100).await.unwrap();
     assert_eq!(all.len(), 3);
-    assert!(all.windows(2).all(|w| w[0].global_position < w[1].global_position));
+    assert!(all
+        .windows(2)
+        .all(|w| w[0].global_position < w[1].global_position));
     assert!(all.iter().all(|e| e.event_type.starts_with("test.")));
 
     // `after` + `limit` paginate.
@@ -205,20 +256,47 @@ async fn document_suite<D: DocumentStore>(store: &D) {
     assert!(store.fetch::<Doc>("c", "k").await.unwrap().is_none());
 
     store
-        .save("c", "k", &Doc { name: "a".into(), hits: 1 })
+        .save(
+            "c",
+            "k",
+            &Doc {
+                name: "a".into(),
+                hits: 1,
+            },
+        )
         .await
         .unwrap();
     assert_eq!(
         store.fetch::<Doc>("c", "k").await.unwrap().unwrap(),
-        Doc { name: "a".into(), hits: 1 }
+        Doc {
+            name: "a".into(),
+            hits: 1
+        }
     );
 
     // Save replaces.
     store
-        .save("c", "k", &Doc { name: "a".into(), hits: 2 })
+        .save(
+            "c",
+            "k",
+            &Doc {
+                name: "a".into(),
+                hits: 2,
+            },
+        )
         .await
         .unwrap();
-    store.save("c", "k2", &Doc { name: "b".into(), hits: 9 }).await.unwrap();
+    store
+        .save(
+            "c",
+            "k2",
+            &Doc {
+                name: "b".into(),
+                hits: 9,
+            },
+        )
+        .await
+        .unwrap();
 
     let mut listed = store.list::<Doc>("c").await.unwrap();
     listed.sort_by(|a, b| a.0.cmp(&b.0));
@@ -235,7 +313,13 @@ async fn document_suite<D: DocumentStore>(store: &D) {
 async fn projection_suite<S: EventStore + DocumentStore>(store: &S) {
     let md = Metadata::new();
     store
-        .append::<Ev>("acc", "p1", ExpectedRevision::Any, &[Ev::Added { n: 10 }, Ev::Removed { n: 4 }], &md)
+        .append::<Ev>(
+            "acc",
+            "p1",
+            ExpectedRevision::Any,
+            &[Ev::Added { n: 10 }, Ev::Removed { n: 4 }],
+            &md,
+        )
         .await
         .unwrap();
 
@@ -250,7 +334,13 @@ async fn projection_suite<S: EventStore + DocumentStore>(store: &S) {
     assert_eq!(p1.view.net, 6);
 
     store
-        .append::<Ev>("acc", "p1", ExpectedRevision::Any, &[Ev::Added { n: 5 }], &md)
+        .append::<Ev>(
+            "acc",
+            "p1",
+            ExpectedRevision::Any,
+            &[Ev::Added { n: 5 }],
+            &md,
+        )
         .await
         .unwrap();
 

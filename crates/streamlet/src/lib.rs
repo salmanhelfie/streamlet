@@ -66,14 +66,20 @@ mod aggregate;
 mod command;
 mod error;
 mod event;
+mod handler;
+mod ids;
+mod macros;
 mod service;
 pub mod store;
+pub mod testing;
 
 pub use aggregate::{render, render_from, Aggregate, View};
-pub use command::Command;
+pub use command::{Command, NoCommand};
 pub use error::{ServiceError, StoreError};
 pub use event::{DomainEvent, ExpectedRevision, Metadata, Recorded};
-pub use service::{Executor, Service};
+pub use handler::{CommandKind, Handles};
+pub use ids::StreamId;
+pub use service::{Entity, Executor, Service};
 pub use store::{catch_up_view, replay_view, DocumentStore, EventStore, Projection};
 
 #[cfg(feature = "memory")]
@@ -84,17 +90,20 @@ pub use store::libsql::SqliteStore;
 
 /// Re-exports of the derive macros so `use streamlet::prelude::*` brings both
 /// the traits and their derives into scope.
-pub use streamlet_derive::{Command, DomainEvent};
+pub use streamlet_derive::{Command, CommandKind, DomainEvent};
 
 /// Everything you need for day-to-day use, in one import.
 pub mod prelude {
     pub use crate::aggregate::{render, Aggregate, View};
-    pub use crate::command::Command;
+    pub use crate::command::{Command, NoCommand};
+    pub use crate::declare_service;
     pub use crate::error::{ServiceError, StoreError};
     pub use crate::event::{DomainEvent, ExpectedRevision, Metadata, Recorded};
-    pub use crate::service::{Executor, Service};
+    pub use crate::handler::{CommandKind, Handles};
+    pub use crate::ids::StreamId;
+    pub use crate::service::{Entity, Executor, Service};
     pub use crate::store::{catch_up_view, replay_view, DocumentStore, EventStore, Projection};
-    pub use streamlet_derive::{Command, DomainEvent};
+    pub use streamlet_derive::{Command, CommandKind, DomainEvent};
 
     #[cfg(feature = "memory")]
     pub use crate::store::memory::MemoryStore;
